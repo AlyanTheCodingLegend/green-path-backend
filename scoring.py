@@ -1,0 +1,239 @@
+"""
+Thermal comfort scoring module for GreenPath.
+Calculates walkability scores using weighted combination or ML model.
+"""
+
+import numpy as np
+import pandas as pd
+import pickle
+import os
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import StandardScaler
+
+from config import WEIGHTS, CACHE_DIR
+
+
+def calculate_weighted_score(hex_grid):
+    """
+    Calculate thermal comfort score using weighted combination of factors.
+
+    Args:
+        hex_grid: GeoDataFrame with normalized scores for each factor
+
+    Returns:
+        GeoDataFrame with added 'comfort_score' column
+    """
+    hex_grid = hex_grid.copy()
+
+    # Weighted sum of all factors
+    hex_grid['comfort_score'] = (
+        WEIGHTS['ndvi'] * hex_grid['ndvi_score'] +
+        WEIGHTS['lst'] * hex_grid['lst_score'] +
+        WEIGHTS['slope'] * hex_grid['slope_score'] +
+        WEIGHTS['shadow'] * hex_grid['shadow_score']
+    )
+
+    # Ensure scores are in 0-1 range
+    hex_grid['comfort_score'] = hex_grid['comfort_score'].clip(0, 1)
+
+    return hex_grid
+
+
+def calculate_synthetic_utci(hex_grid, air_temp=35, humidity=40, wind_speed=2):
+    """
+    Calculate synthetic UTCI-like thermal comfort index.
+    This is a simplified approximation for demonstration purposes.
+
+    UTCI considers: air temperature, radiant temperature, humidity, wind speed.
+
+    Args:
+        hex_grid: GeoDataFrame with LST and other metrics
+        air_temp: Ambient air temperature (°C)
+        humidity: Relative humidity (%)
+        wind_speed: Wind speed (m/s)
+
+    Returns:
+        Series with UTCI-like values (lower is more comfortable)
+    """
+    # Estimate mean radiant temperature from LST
+    # Higher LST = higher radiant temperature
+    mrt = hex_grid['lst'] + 5  # Simple offset
+
+    # Vegetation reduces radiant heat
+    mrt = mrt - 3 * hex_grid['ndvi']
+
+    # Shadow reduces radiant heat
+    mrt = mrt - 2 * hex_grid['shadow']
+
+    # Simplified UTCI-like formula
+    # Based on thermal stress categories
+    utci = (
+        0.5 * air_temp +
+        0.3 * mrt +
+        0.1 * humidity / 10 -
+        0.3 * wind_speed
+    )
+
+    # Adjust for slope (harder to walk uphill in heat)
+    utci = utci + 0.2 * hex_grid['slope']
+
+    return utci
+
+
+def train_comfort_model(hex_grid):
+    """
+    Train a Random Forest model to predict comfort scores.
+    Uses synthetic UTCI as pseudo-labels for training.
+
+    Args:
+        hex_grid: GeoDataFrame with all features
+
+    Returns:
+        Trained model and scaler
+    """
+    cache_path = os.path.join(CACHE_DIR, 'comfort_model.pkl')
+
+    if os.path.exists(cache_path):
+        print("Loading comfort model from cache...")
+        model_data = pickle.load(open(cache_path, 'rb'))
+        return model_data['model'], model_data['scaler']
+
+    print("Training comfort scoring model...")
+
+    # Features for the model
+    features = ['ndvi', 'lst', 'slope', 'shadow']
+    X = hex_grid[features].values
+
+    # Generate synthetic labels using UTCI approximation
+    utci = calculate_synthetic_utci(hex_grid)
+
+    # Convert UTCI to comfort score (invert so higher = more comfortable)
+    # Normalize to 0-1 range
+    utci_min, utci_max = utci.min(), utci.max()
+    y = 1 - (utci - utci_min) / (utci_max - utci_min + 1e-6)
+
+    # Scale features
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # Train Random Forest
+    model = RandomForestRegressor(
+        n_estimators=100,
+        max_depth=10,
+        min_samples_leaf=5,
+        random_state=42,
+        n_jobs=-1
+    )
+    model.fit(X_scaled, y)
+
+    # Cache the model
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    pickle.dump({'model': model, 'scaler': scaler}, open(cache_path, 'wb'))
+
+    # Print feature importance
+    print("Feature importance:")
+    for feat, imp in zip(features, model.feature_importances_):
+        print(f"  {feat}: {imp:.3f}")
+
+    return model, scaler
+
+
+def calculate_ml_score(hex_grid, model=None, scaler=None):
+    """
+    Calculate comfort score using ML model.
+
+    Args:
+        hex_grid: GeoDataFrame with features
+        model: Trained model (or None to train new one)
+        scaler: Feature scaler (or None to create new one)
+
+    Returns:
+        GeoDataFrame with added 'comfort_score' column
+    """
+    hex_grid = hex_grid.copy()
+
+    if model is None:
+        model, scaler = train_comfort_model(hex_grid)
+
+    features = ['ndvi', 'lst', 'slope', 'shadow']
+    X = hex_grid[features].values
+    X_scaled = scaler.transform(X)
+
+    hex_grid['comfort_score'] = model.predict(X_scaled)
+    hex_grid['comfort_score'] = hex_grid['comfort_score'].clip(0, 1)
+
+    return hex_grid
+
+
+def calculate_comfort_scores(hex_grid, method='weighted'):
+    """
+    Main function to calculate comfort scores.
+
+    Args:
+        hex_grid: GeoDataFrame with preprocessed features
+        method: 'weighted' for simple weighted sum, 'ml' for Random Forest
+
+    Returns:
+        GeoDataFrame with comfort scores
+    """
+    print(f"\nCalculating comfort scores using {method} method...")
+
+    if method == 'weighted':
+        hex_grid = calculate_weighted_score(hex_grid)
+    elif method == 'ml':
+        hex_grid = calculate_ml_score(hex_grid)
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+    # Add comfort category
+    hex_grid['comfort_category'] = pd.cut(
+        hex_grid['comfort_score'],
+        bins=[0, 0.3, 0.5, 0.7, 1.0],
+        labels=['Poor', 'Fair', 'Good', 'Excellent']
+    )
+
+    print(f"[OK] Comfort scores calculated")
+    print(f"  Score range: {hex_grid['comfort_score'].min():.3f} - {hex_grid['comfort_score'].max():.3f}")
+    print(f"  Mean score: {hex_grid['comfort_score'].mean():.3f}")
+
+    # Print category distribution
+    print("\n  Comfort distribution:")
+    for cat in ['Excellent', 'Good', 'Fair', 'Poor']:
+        count = (hex_grid['comfort_category'] == cat).sum()
+        pct = count / len(hex_grid) * 100
+        print(f"    {cat}: {count} ({pct:.1f}%)")
+
+    return hex_grid
+
+
+def get_discomfort_cost(comfort_score):
+    """
+    Convert comfort score to discomfort cost for routing.
+    Lower comfort = higher cost.
+
+    Args:
+        comfort_score: Comfort score (0-1)
+
+    Returns:
+        Discomfort cost (higher = worse)
+    """
+    # Inverse relationship with exponential penalty for low comfort
+    if comfort_score < 0.1:
+        comfort_score = 0.1  # Avoid division by zero
+
+    return (1 - comfort_score) ** 2 + 0.1
+
+
+if __name__ == '__main__':
+    # Test scoring
+    from data_collection import collect_all_data
+    from preprocessing import preprocess_data
+
+    data = collect_all_data()
+    hex_grid = preprocess_data(data)
+
+    # Test weighted method
+    scored_grid = calculate_comfort_scores(hex_grid, method='weighted')
+
+    print("\nScored hexagon sample:")
+    print(scored_grid[['ndvi', 'lst', 'slope', 'shadow', 'comfort_score', 'comfort_category']].head(10))
