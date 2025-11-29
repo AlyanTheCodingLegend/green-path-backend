@@ -1,4 +1,4 @@
-# GreenPath Dependencies
+# GreenPath Backend Dependencies
 
 # Core data science
 numpy>=1.24.0
@@ -21,11 +21,9 @@ scikit-learn>=1.3.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
 
-# Web interface
-streamlit>=1.28.0
-folium>=0.14.0
-streamlit-folium>=0.15.0
-branca>=0.6.0
+# Web API (Flask Backend)
+flask>=3.0.0
+flask-cors>=4.0.0
 
 # HTTP requests (for geocoding)
 requests>=2.31.0

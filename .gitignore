@@ -1,3 +1,2 @@
-/__pycache__/
-/cache
-*.pdf
+cache
+__pycache__
