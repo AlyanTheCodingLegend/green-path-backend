@@ -1,13 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState, memo } from 'react'
+import { useEffect, useRef, memo } from 'react'
 import L from 'leaflet'
+import type { Feature, Geometry } from 'geojson'
 import 'leaflet/dist/leaflet.css'
-import { getComfortColor } from '@/lib/utils'
+import type { HexagonFeatureCollection, HexagonProperties, RouteComparison } from '@/lib/api'
 
 // Fix for default marker icons in Leaflet
 if (typeof window !== 'undefined') {
-  delete (L.Icon.Default.prototype as any)._getIconUrl
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
     iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -15,14 +17,16 @@ if (typeof window !== 'undefined') {
   })
 }
 
+type RouteFeature = RouteComparison['cool_route'] | RouteComparison['fast_route']
+
 interface MapProps {
   centerLat: number
   centerLon: number
   zoom?: number
-  hexagons?: any
+  hexagons?: HexagonFeatureCollection
   routes?: {
-    fast?: any
-    cool?: any
+    fast?: RouteFeature
+    cool?: RouteFeature
   }
   startPoint?: [number, number] | null
   endPoint?: [number, number] | null
@@ -113,7 +117,7 @@ function MapComponent({
     }
 
     // Style function
-    const style = (feature: any) => {
+    const style = (feature: Feature<Geometry, HexagonProperties> | undefined) => {
       const comfortScore = feature?.properties?.comfort_score || 0
       let color = '#ef4444'
 
@@ -217,16 +221,16 @@ function MapComponent({
     }
 
     // Fit bounds to routes
-    if (routes.cool || routes.fast) {
-      const route = routes.cool || routes.fast
+    const route = routes.cool || routes.fast
+    if (route) {
       const coordinates =
         route.geometry.type === 'MultiLineString'
-          ? route.geometry.coordinates.flat()
-          : route.geometry.coordinates
+          ? (route.geometry.coordinates as number[][][]).flat()
+          : (route.geometry.coordinates as number[][])
 
       if (coordinates.length > 0) {
         const bounds = L.latLngBounds(
-          coordinates.map((coord: number[]) => [coord[1], coord[0]])
+          coordinates.map((coord) => [coord[1], coord[0]] as [number, number])
         )
         map.current.fitBounds(bounds, { padding: [100, 100], duration: 1 })
       }

@@ -38,24 +38,35 @@ export interface RouteComparison {
   }
 }
 
+export interface HexagonGeometry {
+  type: 'Polygon' | 'MultiPolygon'
+  coordinates: number[][][] | number[][][][]
+}
+
+export interface HexagonProperties {
+  hex_id: string
+  comfort_score: number
+  ndvi: number
+  lst: number
+  slope: number
+  shadow: number
+  category: string
+}
+
+export interface HexagonFeature {
+  type: 'Feature'
+  geometry: HexagonGeometry
+  properties: HexagonProperties
+}
+
+export interface HexagonFeatureCollection {
+  type: 'FeatureCollection'
+  features: HexagonFeature[]
+}
+
 export interface CityData {
   city: string
-  hexagons: {
-    type: 'FeatureCollection'
-    features: Array<{
-      type: 'Feature'
-      geometry: any
-      properties: {
-        hex_id: string
-        comfort_score: number
-        ndvi: number
-        lst: number
-        slope: number
-        shadow: number
-        category: string
-      }
-    }>
-  }
+  hexagons: HexagonFeatureCollection
   stats: {
     total: number
     mean_comfort: number
@@ -65,12 +76,13 @@ export interface CityData {
 }
 
 export interface ProgressEvent {
-  message: string
+  message?: string
   progress?: number
   complete?: boolean
   error?: boolean
-  data?: any
-  timestamp: string
+  data?: CityData
+  timestamp?: string
+  keepalive?: boolean
 }
 
 export class ApiService {
@@ -112,7 +124,7 @@ export class ApiService {
   subscribeToProgress(
     operationId: string,
     onProgress: (event: ProgressEvent) => void,
-    onComplete: (data?: any) => void,
+    onComplete: (data?: CityData) => void,
     onError: (error: string) => void
   ): () => void {
     const eventSource = new EventSource(
@@ -124,7 +136,7 @@ export class ApiService {
         const data: ProgressEvent = JSON.parse(event.data)
 
         if (data.error) {
-          onError(data.message)
+          onError(data.message || 'Unknown error')
           eventSource.close()
         } else if (data.complete) {
           onComplete(data.data)
@@ -188,4 +200,4 @@ export class ApiService {
   }
 }
 
-export const api = new ApiService()
+export const api = new ApiService('http://localhost:5000')

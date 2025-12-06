@@ -29,43 +29,43 @@ export default function ProgressDialog({ isOpen, events, onClose }: ProgressDial
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4 border border-gray-300">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold">
+          <h2 className="text-xl font-bold text-gray-900">
             {isComplete ? 'Complete' : hasError ? 'Error' : 'Loading City Data'}
           </h2>
-          {isComplete && <CheckCircle2 className="w-6 h-6 text-green-500" />}
-          {hasError && <XCircle className="w-6 h-6 text-red-500" />}
+          {isComplete && <CheckCircle2 className="w-6 h-6 text-green-600" />}
+          {hasError && <XCircle className="w-6 h-6 text-red-600" />}
         </div>
 
         {/* Progress bar */}
         {!isComplete && !hasError && (
           <div className="space-y-2">
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
+            <div className="w-full bg-gray-300 rounded-full h-2.5">
               <div
                 className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
                 style={{ width: `${progress}%` }}
               />
             </div>
-            <div className="text-sm text-gray-600 text-right">{progress}%</div>
+            <div className="text-sm text-gray-700 text-right">{progress}%</div>
           </div>
         )}
 
         {/* Progress messages */}
-        <div className="max-h-48 overflow-y-auto space-y-2 bg-gray-50 rounded p-3">
+        <div className="max-h-48 overflow-y-auto space-y-2 bg-gray-100 rounded p-3 border border-gray-300">
           {events.map((event, index) => (
             <div key={index} className="flex items-start gap-2 text-sm">
               {!event.complete && !event.error && (
-                <Loader2 className="w-4 h-4 animate-spin text-blue-500 mt-0.5 flex-shrink-0" />
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600 mt-0.5 flex-shrink-0" />
               )}
               {event.complete && (
-                <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
               )}
               {event.error && (
-                <XCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                <XCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
               )}
-              <span className={event.error ? 'text-red-600' : 'text-gray-700'}>
-                {event.message}
+              <span className={event.error ? 'text-red-700' : 'text-gray-800'}>
+                {event.message || 'Processing...'}
               </span>
             </div>
           ))}
