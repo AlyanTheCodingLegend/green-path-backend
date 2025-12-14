@@ -20,8 +20,8 @@ CITIES = {
         'bbox_buffer': 0.025
     },
     'Karachi': {
-        'lat': 24.8607,
-        'lon': 67.0011,
+        'lat': 24.8138,
+        'lon': 67.0297,
         'bbox_buffer': 0.025
     }
 }
@@ -90,7 +90,7 @@ ROUTE_FAST_COLOR = '#D32F2F'  # Red
 HEATMAP_COLORMAP = 'RdYlGn'   # Red-Yellow-Green
 
 # GEE settings
-GEE_PROJECT = 'gen-lang-client-0880179153'  # Set your GEE project ID here if needed
+GEE_PROJECT = 'gen-lang-client-0880179153'
 
 # Export settings
 EXPORT_FORMAT = 'gpx'

@@ -232,7 +232,7 @@ def fetch_landsat_lst():
         os.makedirs(CACHE_DIR, exist_ok=True)
         pickle.dump(lst_df, open(cache_path, 'wb'))
 
-        print(f"[OK] Fetched {len(lst_df)} LST samples")
+        print(f"✓ SUCCESS: Fetched {len(lst_df)} AUTHENTIC LST samples from Google Earth Engine")
         return lst_df
 
     except Exception as e:
@@ -291,7 +291,7 @@ def fetch_srtm_elevation():
         os.makedirs(CACHE_DIR, exist_ok=True)
         pickle.dump(slope_df, open(cache_path, 'wb'))
 
-        print(f"[OK] Fetched {len(slope_df)} slope samples")
+        print(f"✓ SUCCESS: Fetched {len(slope_df)} AUTHENTIC slope samples from Google Earth Engine")
         return slope_df
 
     except Exception as e:
@@ -401,7 +401,8 @@ def fetch_osm_buildings():
 # Synthetic data generators for fallback when GEE is unavailable
 def generate_synthetic_ndvi():
     """Generate synthetic NDVI data for testing."""
-    print("Generating synthetic NDVI data...")
+    print("\n⚠ WARNING: Generating SYNTHETIC NDVI data (GEE unavailable)")
+    print("  This is NOT real satellite data!")
 
     np.random.seed(42)
     n_points = 5000
@@ -427,7 +428,8 @@ def generate_synthetic_ndvi():
 
 def generate_synthetic_lst():
     """Generate synthetic LST data for testing."""
-    print("Generating synthetic LST data...")
+    print("\n⚠ WARNING: Generating SYNTHETIC LST data (GEE unavailable)")
+    print("  This is NOT real satellite data!")
 
     np.random.seed(43)
     n_points = 3000
@@ -453,7 +455,8 @@ def generate_synthetic_lst():
 
 def generate_synthetic_slope():
     """Generate synthetic slope data for testing."""
-    print("Generating synthetic slope data...")
+    print("\n⚠ WARNING: Generating SYNTHETIC slope data (GEE unavailable)")
+    print("  This is NOT real satellite data!")
 
     np.random.seed(44)
     n_points = 3000
@@ -674,7 +677,8 @@ def fetch_osm_buildings_for_bbox(bbox):
 
 def generate_synthetic_ndvi_for_bbox(bbox):
     """Generate synthetic NDVI data for a specific bounding box."""
-    print("Generating synthetic NDVI data...")
+    print("\n⚠ WARNING: Generating SYNTHETIC NDVI data (GEE unavailable)")
+    print("  This is NOT real satellite data!")
     # Use bbox coordinates to create unique seed for each city
     seed = int(abs(bbox['min_lat'] * 1000 + bbox['min_lon'] * 100)) % 10000
     np.random.seed(seed)
@@ -704,7 +708,8 @@ def generate_synthetic_ndvi_for_bbox(bbox):
 
 def generate_synthetic_lst_for_bbox(bbox):
     """Generate synthetic LST data for a specific bounding box."""
-    print("Generating synthetic LST data...")
+    print("\n⚠ WARNING: Generating SYNTHETIC LST data (GEE unavailable)")
+    print("  This is NOT real satellite data!")
     # Use bbox coordinates to create unique seed for each city
     seed = int(abs(bbox['min_lat'] * 1000 + bbox['min_lon'] * 100 + 1)) % 10000
     np.random.seed(seed)
@@ -733,7 +738,8 @@ def generate_synthetic_lst_for_bbox(bbox):
 
 def generate_synthetic_slope_for_bbox(bbox):
     """Generate synthetic slope data for a specific bounding box."""
-    print("Generating synthetic slope data...")
+    print("\n⚠ WARNING: Generating SYNTHETIC slope data (GEE unavailable)")
+    print("  This is NOT real satellite data!")
     # Use bbox coordinates to create unique seed for each city
     seed = int(abs(bbox['min_lat'] * 1000 + bbox['min_lon'] * 100 + 2)) % 10000
     np.random.seed(seed)
@@ -779,7 +785,7 @@ def fetch_sentinel2_ndvi_for_bbox(bbox):
                         'lat': f['geometry']['coordinates'][1],
                         'ndvi': f['properties'].get('NDVI', 0)} for f in features]
 
-        print(f"[OK] Fetched {len(ndvi_points)} NDVI samples")
+        print(f"✓ SUCCESS: Fetched {len(ndvi_points)} AUTHENTIC NDVI samples from Google Earth Engine")
         return pd.DataFrame(ndvi_points)
 
     except Exception as e:
@@ -819,7 +825,7 @@ def fetch_landsat_lst_for_bbox(bbox):
                        'lat': f['geometry']['coordinates'][1],
                        'lst': f['properties'].get('LST', 35)} for f in features]
 
-        print(f"[OK] Fetched {len(lst_points)} LST samples")
+        print(f"✓ SUCCESS: Fetched {len(lst_points)} AUTHENTIC LST samples from Google Earth Engine")
         return pd.DataFrame(lst_points)
 
     except Exception as e:
@@ -850,7 +856,7 @@ def fetch_srtm_elevation_for_bbox(bbox):
                          'lat': f['geometry']['coordinates'][1],
                          'slope': f['properties'].get('slope', 0)} for f in features]
 
-        print(f"[OK] Fetched {len(slope_points)} slope samples")
+        print(f"✓ SUCCESS: Fetched {len(slope_points)} AUTHENTIC slope samples from Google Earth Engine")
         return pd.DataFrame(slope_points)
 
     except Exception as e:

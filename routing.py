@@ -12,6 +12,7 @@ from shapely.geometry import LineString, Point
 from shapely.ops import transform
 import pyproj
 import heapq
+import time
 
 from config import COMFORT_WEIGHT, DISTANCE_WEIGHT
 from scoring import get_discomfort_cost
@@ -376,15 +377,77 @@ def export_route_gpx(route_stats, filename):
     return filename
 
 
-def compare_routes(G, start_lat, start_lon, end_lat, end_lon, hex_grid=None):
+def is_cool_route_better(cool_stats, fast_stats, max_distance_penalty_pct=30):
+    """
+    Check if cool route is actually better than fast route.
+    Cool route should have higher comfort without excessive distance penalty.
+
+    Args:
+        cool_stats: Statistics for cool route
+        fast_stats: Statistics for fast route
+        max_distance_penalty_pct: Maximum acceptable distance increase (%)
+
+    Returns:
+        True if cool route is better, False otherwise
+    """
+    if not cool_stats or not fast_stats:
+        return False
+
+    # Calculate metrics
+    comfort_improvement = cool_stats['avg_comfort'] - fast_stats['avg_comfort']
+    distance_penalty_pct = ((cool_stats['distance_m'] - fast_stats['distance_m']) /
+                           fast_stats['distance_m'] * 100)
+
+    # Cool route should have:
+    # 1. Higher comfort score (at least 1% improvement)
+    # 2. Not too much extra distance (within threshold)
+    if comfort_improvement > 0.01 and distance_penalty_pct <= max_distance_penalty_pct:
+        return True
+
+    return False
+
+
+def score_cool_route(cool_stats, fast_stats):
+    """
+    Score a cool route candidate based on comfort improvement and distance penalty.
+    Higher score is better. Returns None if route is invalid.
+
+    Args:
+        cool_stats: Statistics for cool route
+        fast_stats: Statistics for fast route
+
+    Returns:
+        Float score (higher is better), or None if invalid
+    """
+    if not cool_stats or not fast_stats:
+        return None
+
+    comfort_improvement = cool_stats['avg_comfort'] - fast_stats['avg_comfort']
+    distance_penalty_pct = ((cool_stats['distance_m'] - fast_stats['distance_m']) /
+                           fast_stats['distance_m'] * 100)
+
+    # Don't score routes that aren't actually better
+    if not is_cool_route_better(cool_stats, fast_stats):
+        return None
+
+    # Score formula: prioritize comfort improvement, penalize distance
+    # Comfort improvement is weighted 3x more than distance penalty
+    score = (comfort_improvement * 100) * 3 - distance_penalty_pct
+
+    return score
+
+
+def compare_routes(G, start_lat, start_lon, end_lat, end_lon, hex_grid=None, max_attempts=10):
     """
     Compare cool route vs fast route between two points.
+    Tries multiple weight combinations to find the best cool route.
 
     Args:
         G: NetworkX graph with comfort scores
         start_lat, start_lon: Start coordinates
         end_lat, end_lon: End coordinates
         hex_grid: GeoDataFrame with comfort data
+        max_attempts: Maximum number of weight combinations to try (default 10)
 
     Returns:
         Dictionary with both routes and comparison metrics
@@ -393,28 +456,127 @@ def compare_routes(G, start_lat, start_lon, end_lat, end_lon, hex_grid=None):
     start_node = get_nearest_node(G, start_lat, start_lon)
     end_node = get_nearest_node(G, end_lat, end_lon)
 
-    # Find both routes
+    # Find fast route first
     fast_path = find_shortest_route(G, start_node, end_node)
-    cool_path = find_coolest_route(G, start_node, end_node)
-
-    # Get statistics
     fast_stats = get_route_stats(G, fast_path, hex_grid)
-    cool_stats = get_route_stats(G, cool_path, hex_grid)
+
+    # Try multiple weight combinations to find the best cool route
+    # Varying the balance between comfort and distance
+    weight_combinations = [
+        (4.0, 0.5),   # Default: prioritize comfort heavily
+        (3.0, 1.0),   # Balanced
+        (5.0, 0.3),   # Maximum comfort priority
+        (2.5, 1.5),   # More distance-conscious
+        (3.5, 0.8),   # Slightly comfort-focused
+        (6.0, 0.2),   # Very high comfort priority
+        (2.0, 2.0),   # Equal weights
+        (4.5, 0.4),   # High comfort with low distance weight
+        (3.0, 0.6),   # Moderate comfort focus
+        (5.5, 0.25),  # Very high comfort, minimal distance
+    ]
+
+    candidates = []
+    used_fallback = False
+
+    print(f"\n" + "="*80)
+    print(f"ROUTE FINDING: Trying {max_attempts} weight combinations")
+    print(f"  Start node: {start_node}, End node: {end_node}")
+    print("="*80)
+
+    total_start_time = time.time()
+
+    for attempt, (comfort_w, distance_w) in enumerate(weight_combinations[:max_attempts], 1):
+        attempt_start = time.time()
+
+        print(f"\n[Attempt {attempt}/{max_attempts}] Testing weights: comfort={comfort_w}, distance={distance_w}")
+
+        # Find the route with these weights
+        pathfind_start = time.time()
+        cool_path = find_coolest_route(G, start_node, end_node,
+                                      comfort_weight=comfort_w,
+                                      distance_weight=distance_w)
+        pathfind_time = time.time() - pathfind_start
+
+        # Calculate route stats
+        stats_start = time.time()
+        cool_stats = get_route_stats(G, cool_path, hex_grid)
+        stats_time = time.time() - stats_start
+
+        attempt_time = time.time() - attempt_start
+
+        if cool_stats:
+            comfort_diff = cool_stats['avg_comfort'] - fast_stats['avg_comfort']
+            dist_diff_pct = ((cool_stats['distance_m'] - fast_stats['distance_m']) /
+                           fast_stats['distance_m'] * 100)
+
+            # Score this candidate
+            route_score = score_cool_route(cool_stats, fast_stats)
+
+            if route_score is not None:
+                print(f"  ✓ VALID route found!")
+                print(f"    Comfort improvement: +{comfort_diff:.1%}")
+                print(f"    Distance penalty: +{dist_diff_pct:.1f}%")
+                print(f"    Score: {route_score:.2f}")
+                print(f"    Timing: pathfinding={pathfind_time*1000:.1f}ms, stats={stats_time*1000:.1f}ms, total={attempt_time*1000:.1f}ms")
+                candidates.append({
+                    'path': cool_path,
+                    'stats': cool_stats,
+                    'score': route_score,
+                    'weights': (comfort_w, distance_w)
+                })
+            else:
+                print(f"  ✗ Route not good enough")
+                print(f"    Comfort: +{comfort_diff:.1%}, Distance: +{dist_diff_pct:.1f}%")
+                print(f"    Timing: pathfinding={pathfind_time*1000:.1f}ms, stats={stats_time*1000:.1f}ms, total={attempt_time*1000:.1f}ms")
+
+    total_time = time.time() - total_start_time
+    print(f"\n" + "="*80)
+    print(f"Total route finding time: {total_time*1000:.1f}ms for {max_attempts} attempts")
+    print(f"Average per attempt: {(total_time/max_attempts)*1000:.1f}ms")
+    print("="*80)
+
+    # Pick the best candidate based on score
+    if candidates:
+        best_candidate = max(candidates, key=lambda x: x['score'])
+        best_cool_path = best_candidate['path']
+        best_cool_stats = best_candidate['stats']
+        best_score = best_candidate['score']
+        best_weights = best_candidate['weights']
+
+        comfort_improvement = best_cool_stats['avg_comfort'] - fast_stats['avg_comfort']
+        dist_penalty = ((best_cool_stats['distance_m'] - fast_stats['distance_m']) /
+                       fast_stats['distance_m'] * 100)
+
+        print(f"\n✓✓✓ BEST ROUTE SELECTED ✓✓✓")
+        print(f"  Found {len(candidates)} valid candidates")
+        print(f"  Best: comfort +{comfort_improvement:.1%}, distance +{dist_penalty:.1f}%")
+        print(f"  Weights: comfort={best_weights[0]}, distance={best_weights[1]}")
+        print(f"  Score: {best_score:.2f}")
+        print(f"  Route path nodes: {len(best_cool_path)}")
+    else:
+        # No valid cool route found, use fast route
+        print(f"\n⚠ FALLBACK TO FAST ROUTE")
+        print(f"  No cool route met criteria after {max_attempts} attempts")
+        print(f"  Using fastest route as the optimal choice")
+        best_cool_path = fast_path
+        best_cool_stats = fast_stats
+        used_fallback = True
 
     # Calculate comparison
     comparison = {}
-    if fast_stats and cool_stats:
-        comparison['distance_diff_m'] = cool_stats['distance_m'] - fast_stats['distance_m']
+    if fast_stats and best_cool_stats:
+        comparison['distance_diff_m'] = best_cool_stats['distance_m'] - fast_stats['distance_m']
         comparison['distance_diff_pct'] = (
-            (cool_stats['distance_m'] - fast_stats['distance_m']) /
+            (best_cool_stats['distance_m'] - fast_stats['distance_m']) /
             fast_stats['distance_m'] * 100
         )
-        comparison['comfort_improvement'] = cool_stats['avg_comfort'] - fast_stats['avg_comfort']
-        comparison['time_diff_min'] = cool_stats['walking_time_min'] - fast_stats['walking_time_min']
+        comparison['comfort_improvement'] = best_cool_stats['avg_comfort'] - fast_stats['avg_comfort']
+        comparison['time_diff_min'] = best_cool_stats['walking_time_min'] - fast_stats['walking_time_min']
+        comparison['used_fallback'] = used_fallback
 
     return {
         'fast_route': fast_stats,
-        'cool_route': cool_stats,
+        'cool_route': best_cool_stats,
         'comparison': comparison,
         'start_node': start_node,
         'end_node': end_node

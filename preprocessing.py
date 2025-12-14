@@ -196,24 +196,34 @@ def calculate_building_shadow_index(hex_grid, buildings):
     return pd.Series(shadow_index)
 
 
-def normalize_values(series, invert=False):
+def normalize_values(series, invert=False, global_min=None, global_max=None):
     """
-    Normalize values to 0-1 range using min-max scaling.
+    Normalize values to 0-1 range using global or local min-max scaling.
 
     Args:
         series: Pandas Series to normalize
         invert: If True, invert so that low values become high
+        global_min: Fixed minimum value for normalization (for cross-city consistency)
+        global_max: Fixed maximum value for normalization (for cross-city consistency)
 
     Returns:
         Normalized Series
     """
-    min_val = series.min()
-    max_val = series.max()
+    # Use global ranges if provided, otherwise use data min/max
+    if global_min is not None and global_max is not None:
+        min_val = global_min
+        max_val = global_max
+    else:
+        min_val = series.min()
+        max_val = series.max()
 
     if max_val == min_val:
         return pd.Series(0.5, index=series.index)
 
     normalized = (series - min_val) / (max_val - min_val)
+
+    # Clip values to 0-1 range (handles values outside global range)
+    normalized = normalized.clip(0, 1)
 
     if invert:
         normalized = 1 - normalized
@@ -225,6 +235,7 @@ def preprocess_data(data):
     """
     Main preprocessing function.
     Aggregates all data to hexagon grid and calculates normalized scores.
+    Uses global normalization ranges for cross-city consistency.
 
     Args:
         data: Dictionary with raw data from data collection
@@ -232,6 +243,15 @@ def preprocess_data(data):
     Returns:
         GeoDataFrame with hexagon grid and all preprocessed features
     """
+    # Global normalization ranges for Pakistani cities
+    # These ensure all cities are scored on the same scale
+    GLOBAL_RANGES = {
+        'ndvi': (-0.3, 0.8),    # Typical NDVI range for urban areas
+        'lst': (25.0, 55.0),     # Typical LST range in Celsius for summer
+        'slope': (0.0, 15.0),    # Walkable slope range in degrees
+        'shadow': (0.0, 1.0)     # Already normalized
+    }
+
     # Note: Caching is handled at the app level per-city
     # Don't use internal caching here to avoid cross-city cache conflicts
 
@@ -250,8 +270,13 @@ def preprocess_data(data):
     ndvi_agg = aggregate_to_hexagons(data['hex_grid'], data['ndvi'], 'ndvi')
     ndvi_interpolated = interpolate_missing_values(data['hex_grid'], ndvi_agg, 'ndvi')
     hex_grid['ndvi'] = ndvi_interpolated
-    hex_grid['ndvi_score'] = normalize_values(hex_grid['ndvi'])
+    hex_grid['ndvi_score'] = normalize_values(
+        hex_grid['ndvi'],
+        global_min=GLOBAL_RANGES['ndvi'][0],
+        global_max=GLOBAL_RANGES['ndvi'][1]
+    )
     print(f"  NDVI range: {hex_grid['ndvi'].min():.3f} - {hex_grid['ndvi'].max():.3f}")
+    print(f"  NDVI score range: {hex_grid['ndvi_score'].min():.3f} - {hex_grid['ndvi_score'].max():.3f}")
 
     # 2. Aggregate LST to hexagons
     print("Aggregating LST data to hexagons...")
@@ -259,8 +284,14 @@ def preprocess_data(data):
     lst_interpolated = interpolate_missing_values(data['hex_grid'], lst_agg, 'lst')
     hex_grid['lst'] = lst_interpolated
     # Invert LST so that cooler = better
-    hex_grid['lst_score'] = normalize_values(hex_grid['lst'], invert=True)
+    hex_grid['lst_score'] = normalize_values(
+        hex_grid['lst'],
+        invert=True,
+        global_min=GLOBAL_RANGES['lst'][0],
+        global_max=GLOBAL_RANGES['lst'][1]
+    )
     print(f"  LST range: {hex_grid['lst'].min():.1f}C - {hex_grid['lst'].max():.1f}C")
+    print(f"  LST score range: {hex_grid['lst_score'].min():.3f} - {hex_grid['lst_score'].max():.3f}")
 
     # 3. Aggregate slope to hexagons
     print("Aggregating slope data to hexagons...")
@@ -268,14 +299,24 @@ def preprocess_data(data):
     slope_interpolated = interpolate_missing_values(data['hex_grid'], slope_agg, 'slope')
     hex_grid['slope'] = slope_interpolated
     # Invert slope so that flatter = better
-    hex_grid['slope_score'] = normalize_values(hex_grid['slope'], invert=True)
+    hex_grid['slope_score'] = normalize_values(
+        hex_grid['slope'],
+        invert=True,
+        global_min=GLOBAL_RANGES['slope'][0],
+        global_max=GLOBAL_RANGES['slope'][1]
+    )
     print(f"  Slope range: {hex_grid['slope'].min():.1f} - {hex_grid['slope'].max():.1f}")
+    print(f"  Slope score range: {hex_grid['slope_score'].min():.3f} - {hex_grid['slope_score'].max():.3f}")
 
     # 4. Calculate building shadow index
     print("Calculating building shadow potential...")
     shadow_series = calculate_building_shadow_index(data['hex_grid'], data['buildings'])
     hex_grid['shadow'] = shadow_series
-    hex_grid['shadow_score'] = normalize_values(hex_grid['shadow'])
+    hex_grid['shadow_score'] = normalize_values(
+        hex_grid['shadow'],
+        global_min=GLOBAL_RANGES['shadow'][0],
+        global_max=GLOBAL_RANGES['shadow'][1]
+    )
     print(f"  Shadow coverage: {(hex_grid['shadow'] > 0).sum()} hexagons with buildings")
 
     print("\n[OK] Preprocessing complete!")

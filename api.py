@@ -348,5 +348,27 @@ def health_check():
 
 
 if __name__ == '__main__':
+    # Initialize and test Google Earth Engine connection
+    print("\n" + "="*80)
+    print("GREENPATH BACKEND STARTING")
+    print("="*80)
+
+    from data_collection import initialize_gee
+
+    print("\nChecking Google Earth Engine connection...")
+    gee_connected = initialize_gee()
+
+    if gee_connected:
+        print("✓ Google Earth Engine: CONNECTED")
+        print("✓ Data Source: AUTHENTIC satellite data from GEE")
+    else:
+        print("✗ Google Earth Engine: NOT CONNECTED")
+        print("⚠ Data Source: SYNTHETIC fallback data (for testing only)")
+        print("  Run 'earthengine authenticate' to use real satellite data")
+
+    print("\n" + "="*80)
+    print("Starting Flask server on http://0.0.0.0:5000")
+    print("="*80 + "\n")
+
     # Run Flask development server
     app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
